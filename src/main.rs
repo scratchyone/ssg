@@ -75,38 +75,40 @@ fn main() {
     info!("Output: {}", node_tree_to_html(subbed));
 }
 
+fn brace_eval(input: String, values: HashMap<String, String>) -> String {
+    let mut text = input;
+    let re = Regex::new(r"\{(.*?)\}").unwrap();
+    for cap in re.captures_iter(&text.clone()) {
+        trace!("Evaluating: {}", &cap[1]);
+        let isolate = &mut v8::Isolate::new(Default::default());
+        let scope = &mut v8::HandleScope::new(isolate);
+        let context = v8::Context::new(scope);
+        let mut scope = &mut v8::ContextScope::new(scope, context);
+        for (key, value) in values.clone() {
+            let key = v8::String::new(scope, &key).unwrap().into();
+            let value = v8::String::new(scope, &value).unwrap().into();
+            context
+                .global(&mut scope)
+                .set(&mut scope, key, value)
+                .unwrap();
+        }
+        let code = v8::String::new(scope, &cap[1]).unwrap();
+        let script = v8::Script::compile(scope, code, None).unwrap();
+        let result = script.run(scope).unwrap();
+        let result = result.to_string(scope).unwrap().to_rust_string_lossy(scope);
+        trace!("Result: {}", result);
+        text = text.replace(&cap[0], &result);
+    }
+    text
+}
+
 fn sub_values(
     node: Node,
     map: HashMap<String, String>,
     components: HashMap<String, Vec<Node>>,
 ) -> Node {
     match node {
-        Node::Text(t) => {
-            let mut text = t;
-            let re = Regex::new(r"\{(.*?)\}").unwrap();
-            for cap in re.captures_iter(&text.clone()) {
-                trace!("Evaluating: {}", &cap[1]);
-                let isolate = &mut v8::Isolate::new(Default::default());
-                let scope = &mut v8::HandleScope::new(isolate);
-                let context = v8::Context::new(scope);
-                let mut scope = &mut v8::ContextScope::new(scope, context);
-                for (key, value) in map.clone() {
-                    let key = v8::String::new(scope, &key).unwrap().into();
-                    let value = v8::String::new(scope, &value).unwrap().into();
-                    context
-                        .global(&mut scope)
-                        .set(&mut scope, key, value)
-                        .unwrap();
-                }
-                let code = v8::String::new(scope, &cap[1]).unwrap();
-                let script = v8::Script::compile(scope, code, None).unwrap();
-                let result = script.run(scope).unwrap();
-                let result = result.to_string(scope).unwrap().to_rust_string_lossy(scope);
-                trace!("Result: {}", result);
-                text = text.replace(&cap[0], &result);
-            }
-            Node::Text(text)
-        }
+        Node::Text(t) => Node::Text(brace_eval(t, map)),
         Node::Element(e) => Node::Element(Element {
             children: e
                 .children
@@ -117,7 +119,7 @@ fn sub_values(
                         let mut map = HashMap::new();
                         for attr in e.attributes {
                             if let Some(val) = attr.1 {
-                                map.insert(attr.0, val);
+                                map.insert(attr.0, brace_eval(val, map.clone()));
                             }
                         }
                         trace!("{} attrs: {:#?}", e.name, map);
