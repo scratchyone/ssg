@@ -1,0 +1,12 @@
+[package]
+authors = ["scratchyone <scratchywon@gmail.com>"]
+edition = "2018"
+name = "ssg"
+version = "0.1.0"
+
+[dependencies]
+html_parser = "0.6.2"
+log = "*"
+pretty_env_logger = "*"
+regex = "1.5.3"
+rusty_v8 = "0.22.1"
